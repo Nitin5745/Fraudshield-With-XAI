@@ -1,2 +1,7 @@
 # Fraudshield-With-XAI
-A fraud payment detection tool before an authorization of the payment, if any suspicious transaction is blocked immediately and a responsive dashboard which real time graph, a pir chart and also a SHAP explainablility.
+
+A fraud payment detection tool operating before payment authorization. Suspicious transactions are blocked immediately. Features a responsive dashboard with a real-time graph, a pie chart, and SHAP explainability.
+
+## Setup
+```bash
+pip install django djangorestframework scikit-learn pandas shap joblib

@@ -1,0 +1,261 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Pre-Authorization Fraud Simulator</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <style>
+        * { font-family: 'Inter', sans-serif; }
+        body { background: #f4f7fb; color: #111827; min-height: 100vh; }
+        .navbar-custom { background: white; border-bottom: 1px solid #e5e7eb; padding: 18px 40px; }
+        .brand-title { font-size: 28px; font-weight: 700; color: #0f172a; }
+        .main-wrapper { padding: 60px 20px; }
+        .payment-card { max-width: 760px; margin: auto; background: white; border-radius: 24px; padding: 40px; box-shadow: 0 10px 30px rgba(15,23,42,0.08); }
+        .section-title { font-size: 34px; font-weight: 700; margin-bottom: 10px; }
+        .section-subtitle { color: #6b7280; margin-bottom: 40px; }
+        .form-label { font-weight: 600; margin-bottom: 10px; color: #111827; }
+        .form-control, .form-select { border-radius: 14px; padding: 14px; border: 1px solid #d1d5db; box-shadow: none !important; }
+        .risk-box { background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 18px; padding: 24px; margin-top: 25px; }
+        .form-check { margin-bottom: 16px; }
+        .btn-pay { background: #2563eb; border: none; border-radius: 14px; padding: 16px; width: 100%; color: white; font-weight: 600; font-size: 18px; margin-top: 25px; transition: 0.3s; }
+        .btn-pay:hover { background: #1d4ed8; }
+        .btn-pay:disabled { background: #93c5fd; cursor: not-allowed; }
+        .status-box { margin-top: 30px; border-radius: 18px; padding: 18px; text-align: center; font-size: 22px; font-weight: 700; display: none; }
+        .approved { background: #ecfdf5; color: #047857; border: 1px solid #a7f3d0; }
+        .blocked  { background: #fef2f2; color: #b91c1c; border: 1px solid #fecaca; }
+        .loading  { background: #eff6ff; color: #1d4ed8; border: 1px solid #bfdbfe; }
+        .mini-tag { background: #eff6ff; color: #1d4ed8; padding: 6px 12px; border-radius: 999px; font-size: 14px; font-weight: 600; }
+        .score-detail { font-size: 13px; font-weight: 400; margin-top: 6px; opacity: 0.75; }
+
+        /* Pattern cards */
+        .pattern-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-top: 8px; }
+        .pattern-card {
+            border: 2px solid #e5e7eb; border-radius: 14px; padding: 14px 16px;
+            cursor: pointer; transition: 0.2s; background: white;
+        }
+        .pattern-card:hover { border-color: #2563eb; background: #eff6ff; }
+        .pattern-card.selected { border-color: #2563eb; background: #eff6ff; }
+        .pattern-card .p-title { font-weight: 700; font-size: 14px; margin-bottom: 3px; }
+        .pattern-card .p-desc  { font-size: 12px; color: #6b7280; }
+        .pattern-card .p-badge {
+            display: inline-block; font-size: 11px; font-weight: 700;
+            padding: 2px 8px; border-radius: 999px; margin-bottom: 6px;
+        }
+        .badge-normal   { background: #dcfce7; color: #166534; }
+        .badge-medium   { background: #fef9c3; color: #92400e; }
+        .badge-high     { background: #fee2e2; color: #b91c1c; }
+        .badge-critical { background: #fce7f3; color: #9d174d; }
+    </style>
+</head>
+<body>
+
+<nav class="navbar-custom d-flex justify-content-between align-items-center">
+    <div class="brand-title">FraudShield AI</div>
+    <div class="mini-tag">Pre-Authorization Engine</div>
+</nav>
+
+<div class="main-wrapper">
+    <div class="payment-card">
+
+        <div class="section-title">Payment Simulator</div>
+        <div class="section-subtitle">Simulate a real-time payment transaction and evaluate fraud risk before authorization.</div>
+
+        <div class="mb-4">
+            <label class="form-label">Transaction Amount</label>
+            <input type="number" id="amount" class="form-control" placeholder="Enter amount" min="1">
+        </div>
+
+        <div class="row">
+            <div class="col-md-6 mb-4">
+                <label class="form-label">Country</label>
+                <select id="country" class="form-select">
+                    <option value="india">India</option>
+                    <option value="international">International</option>
+                </select>
+            </div>
+            <div class="col-md-6 mb-4">
+                <label class="form-label">Device Type</label>
+                <select id="device" class="form-select">
+                    <option value="known">Known Device</option>
+                    <option value="new">New Device</option>
+                </select>
+            </div>
+        </div>
+
+        <!-- Fraud Pattern Selector -->
+        <div class="mb-4">
+            <label class="form-label">Transaction Pattern <span style="color:#6b7280;font-weight:400">(affects ML features &amp; SHAP chart)</span></label>
+            <div class="pattern-grid">
+
+                <div class="pattern-card selected" data-pattern="normal" onclick="selectPattern(this)">
+                    <div class="p-badge badge-normal">Normal</div>
+                    <div class="p-title">&#127981; Genuine Purchase</div>
+                    <div class="p-desc">Typical transaction — all V-features at average values</div>
+                </div>
+
+                <div class="pattern-card" data-pattern="card_testing" onclick="selectPattern(this)">
+                    <div class="p-badge badge-medium">Suspicious</div>
+                    <div class="p-title">&#128179; Card Testing</div>
+                    <div class="p-desc">Small amount probing — unusual V4, V11 spikes</div>
+                </div>
+
+                <div class="pattern-card" data-pattern="account_takeover" onclick="selectPattern(this)">
+                    <div class="p-badge badge-high">High Risk</div>
+                    <div class="p-title">&#128272; Account Takeover</div>
+                    <div class="p-desc">Identity fraud pattern — abnormal V3, V9, V14</div>
+                </div>
+
+                <div class="pattern-card" data-pattern="stolen_card" onclick="selectPattern(this)">
+                    <div class="p-badge badge-critical">Critical</div>
+                    <div class="p-title">&#128683; Stolen Card</div>
+                    <div class="p-desc">Classic fraud signature — extreme V12, V14, V17</div>
+                </div>
+
+            </div>
+        </div>
+
+        <div class="risk-box">
+            <h5 class="mb-4 fw-bold">Behavioral Risk Indicators</h5>
+            <div class="form-check">
+                <input class="form-check-input" type="checkbox" id="vpn">
+                <label class="form-check-label">VPN / Proxy Detected</label>
+            </div>
+            <div class="form-check">
+                <input class="form-check-input" type="checkbox" id="midnight">
+                <label class="form-check-label">Midnight Transaction</label>
+            </div>
+            <div class="form-check">
+                <input class="form-check-input" type="checkbox" id="highrisk">
+                <label class="form-check-label">High-Risk Merchant Category</label>
+            </div>
+        </div>
+
+        <button class="btn-pay" id="payBtn" onclick="processPayment()">
+            Process Payment
+        </button>
+
+        <div id="statusBox" class="status-box"></div>
+
+    </div>
+</div>
+
+<script>
+// ── Pattern V-feature profiles ────────────────────────────────────────────
+// Each profile overrides specific V-features from the training mean.
+// These are the same PCA-transformed features the model was trained on.
+const PATTERNS = {
+    normal: {},   // use training mean for everything
+
+    card_testing: {
+        V4:  3.5,   // unusually high — activity spike
+        V11: 4.2,
+        V2:  2.8,
+        V21: 3.1,
+    },
+
+    account_takeover: {
+        V3:  -4.5,
+        V9:  -3.8,
+        V14: -5.2,
+        V16: -3.0,
+        V10: -3.5,
+    },
+
+    stolen_card: {
+        V12: -9.0,   // strongest fraud indicators in the dataset
+        V14: -9.0,
+        V17: -9.0,
+        V10: -6.0,
+        V16: -5.0,
+        V3:  -3.5,
+    },
+};
+
+var selectedPattern = 'normal';
+
+function selectPattern(el) {
+    document.querySelectorAll('.pattern-card').forEach(function(c){ c.classList.remove('selected'); });
+    el.classList.add('selected');
+    selectedPattern = el.getAttribute('data-pattern');
+}
+
+// ── CSRF helper ───────────────────────────────────────────────────────────
+function getCookie(name) {
+    var cookieValue = null;
+    if (document.cookie && document.cookie !== '') {
+        document.cookie.split(';').forEach(function(cookie) {
+            var c = cookie.trim();
+            if (c.startsWith(name + '=')) {
+                cookieValue = decodeURIComponent(c.slice(name.length + 1));
+            }
+        });
+    }
+    return cookieValue;
+}
+
+// ── Process payment ───────────────────────────────────────────────────────
+function processPayment() {
+    var amount = parseFloat(document.getElementById('amount').value);
+
+    if (!amount || amount <= 0) {
+        alert('Please enter a valid transaction amount.');
+        return;
+    }
+
+    // Build payload: start with behavioural signals
+    var payload = {
+        amount:   amount,
+        country:  document.getElementById('country').value,
+        device:   document.getElementById('device').value,
+        vpn:      document.getElementById('vpn').checked,
+        midnight: document.getElementById('midnight').checked,
+        highrisk: document.getElementById('highrisk').checked,
+    };
+
+    // Merge the V-feature overrides for the selected pattern
+    var vFeatures = PATTERNS[selectedPattern] || {};
+    Object.keys(vFeatures).forEach(function(k){ payload[k] = vFeatures[k]; });
+
+    // UI feedback
+    var btn       = document.getElementById('payBtn');
+    var statusBox = document.getElementById('statusBox');
+
+    btn.disabled            = true;
+    statusBox.style.display = 'block';
+    statusBox.className     = 'status-box loading';
+    statusBox.innerHTML     = 'Evaluating Transaction...';
+
+    fetch('/process-payment/', {
+        method:  'POST',
+        headers: {
+            'Content-Type': 'application/json',
+            'X-CSRFToken':  getCookie('csrftoken'),
+        },
+        body: JSON.stringify(payload),
+    })
+    .then(function(response){ return response.json().then(function(data){ return { status: response.status, data: data }; }); })
+    .then(function(r) {
+        if (r.status === 200) {
+            statusBox.className = 'status-box approved';
+            statusBox.innerHTML = '&#10003; Transaction Approved' +
+                '<div class="score-detail">Risk score: ' + (r.data.risk_score != null ? r.data.risk_score : '—') + '</div>';
+        } else {
+            statusBox.className = 'status-box blocked';
+            statusBox.innerHTML = '&#9888; Suspicious Transaction Blocked' +
+                '<div class="score-detail">Risk score: ' + (r.data.risk_score != null ? r.data.risk_score : '—') + '</div>';
+        }
+    })
+    .catch(function() {
+        statusBox.className = 'status-box blocked';
+        statusBox.innerHTML = '&#10060; Server Error – check the console';
+    })
+    .finally(function() {
+        btn.disabled = false;
+    });
+}
+</script>
+
+</body>
+</html>

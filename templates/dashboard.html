@@ -1,0 +1,460 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Fraud Detection Dashboard</title>
+
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+
+    <style>
+        * { font-family: 'Inter', sans-serif; }
+        body { background: #f4f7fb; color: #111827; }
+
+        .sidebar {
+            width: 260px;
+            background: #0f172a;
+            min-height: 100vh;
+            position: fixed;
+            left: 0; top: 0;
+            padding: 30px 20px;
+        }
+        .brand { color: white; font-size: 26px; font-weight: 700; margin-bottom: 50px; }
+        .menu-item { color: #cbd5e1; margin-bottom: 18px; padding: 14px; border-radius: 12px; transition: 0.3s; }
+        .menu-item:hover { background: #1e293b; color: white; }
+
+        .main-content { margin-left: 280px; padding: 40px; }
+        .page-title { font-size: 36px; font-weight: 700; margin-bottom: 35px; }
+
+        .metric-card {
+            background: white; border-radius: 22px; padding: 28px;
+            box-shadow: 0 8px 20px rgba(15,23,42,0.06); margin-bottom: 25px;
+        }
+        .metric-title { color: #6b7280; font-size: 15px; margin-bottom: 10px; }
+        .metric-value { font-size: 34px; font-weight: 700; }
+
+        .chart-card, .table-card {
+            background: white; border-radius: 22px; padding: 30px;
+            box-shadow: 0 8px 20px rgba(15,23,42,0.06); margin-bottom: 30px;
+        }
+
+        .chart-subtitle {
+            font-size: 12px; color: #9ca3af; margin-top: -12px; margin-bottom: 16px;
+        }
+
+        table { width: 100%; }
+        th { color: #6b7280; padding-bottom: 18px; }
+        td { padding: 18px 0; border-top: 1px solid #f1f5f9; }
+
+        .risk-badge {
+            padding: 6px 14px; border-radius: 999px;
+            font-size: 13px; font-weight: 600; display: inline-block;
+        }
+        .risk-critical { background: #fce7f3; color: #9d174d; }
+        .risk-high     { background: #fee2e2; color: #b91c1c; }
+        .risk-medium   { background: #fef9c3; color: #92400e; }
+        .risk-low      { background: #dcfce7; color: #166534; }
+
+        .btn-view {
+            background: #2563eb; color: white;
+            border: none; border-radius: 12px; padding: 10px 18px;
+            cursor: pointer;
+        }
+        .btn-view:hover { background: #1d4ed8; }
+        .btn-view:disabled { background: #93c5fd; cursor: not-allowed; }
+
+        .modal-content { border-radius: 24px; border: none; }
+
+        /* SHAP bar colours */
+        .shap-positive { background: #ef4444; }
+        .shap-negative { background: #22c55e; }
+
+        #shapLoading { display: none; text-align: center; padding: 40px; color: #6b7280; }
+        #shapChartWrap { display: none; }
+        #shapPending { display: none; text-align: center; padding: 30px; color: #f59e0b; font-weight: 600; }
+
+        .live-badge {
+            display: inline-block; background: #dcfce7; color: #16a34a;
+            font-size: 11px; font-weight: 700; padding: 3px 8px; border-radius: 999px;
+            vertical-align: middle; margin-left: 8px; letter-spacing: 0.5px;
+        }
+        .live-badge::before { content: "● "; }
+    </style>
+</head>
+<body>
+
+<div class="sidebar">
+    <div class="brand">FraudShield AI</div>
+
+    <a href="{% url 'dashboard' %}" class="text-decoration-none">
+        <div class="menu-item">Dashboard</div>
+    </a>
+    <a href="{% url 'simulator' %}" class="text-decoration-none">
+        <div class="menu-item">Simulator</div>
+    </a>
+    <a href="{% url 'logout' %}" class="text-decoration-none">
+        <div class="menu-item">Logout</div>
+    </a>
+</div>
+
+<div class="main-content">
+
+    <div class="page-title">Fraud Detection Dashboard</div>
+
+    <div class="row">
+        <div class="col-md-3">
+            <div class="metric-card">
+                <div class="metric-title">Total Transactions</div>
+                <div class="metric-value" id="live-total">{{ total_transactions }}</div>
+            </div>
+        </div>
+        <div class="col-md-3">
+            <div class="metric-card">
+                <div class="metric-title">Blocked Transactions</div>
+                <div class="metric-value" id="live-fraud">{{ fraud_cases }}</div>
+            </div>
+        </div>
+        <div class="col-md-3">
+            <div class="metric-card">
+                <div class="metric-title">Fraud Rate</div>
+                <div class="metric-value" id="live-rate">{{ fraud_rate }}%</div>
+            </div>
+        </div>
+        <div class="col-md-3">
+            <div class="metric-card">
+                <div class="metric-title">Model Accuracy</div>
+                <div class="metric-value">98.1%</div>
+            </div>
+        </div>
+    </div>
+
+    <div class="row">
+        <div class="col-md-7">
+            <div class="chart-card">
+                <h5 class="fw-bold mb-1">Fraud Detection Trend <span class="live-badge">LIVE</span></h5>
+                <p class="chart-subtitle">Last 12 hours &mdash; approved &amp; blocked, updates every 10 s</p>
+                <canvas id="trendChart"></canvas>
+            </div>
+        </div>
+        <div class="col-md-5">
+            <div class="chart-card">
+                <h5 class="fw-bold mb-4">Fraud Breakdown</h5>
+                <canvas id="pieChart"></canvas>
+            </div>
+        </div>
+    </div>
+
+    <div class="table-card">
+        <h5 class="fw-bold mb-4">Recent Fraud Logs</h5>
+        <table>
+            <thead>
+                <tr>
+                    <th>ID</th>
+                    <th>Amount</th>
+                    <th>Status</th>
+                    <th>Risk</th>
+                    <th>Score</th>
+                    <th>Action</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for log in logs %}
+                <tr>
+                    <td>#{{ log.display_num }}</td>
+                    <td>&#8377; {{ log.amount }}</td>
+                    <td>
+                        {% if log.entry_type == 'blocked' %}
+                            <span class="risk-badge risk-high" style="background:#fee2e2;color:#b91c1c;">Blocked</span>
+                        {% else %}
+                            <span class="risk-badge risk-low" style="background:#dcfce7;color:#166534;">Approved</span>
+                        {% endif %}
+                    </td>
+                    <td>
+                        {% if log.anomaly_score >= 75 %}
+                            <span class="risk-badge risk-critical">Critical</span>
+                        {% elif log.anomaly_score >= 55 %}
+                            <span class="risk-badge risk-high">High</span>
+                        {% elif log.anomaly_score >= 35 %}
+                            <span class="risk-badge risk-medium">Medium</span>
+                        {% else %}
+                            <span class="risk-badge risk-low">Low</span>
+                        {% endif %}
+                    </td>
+                    <td>{{ log.anomaly_score }}</td>
+                    <td>
+                        {% if log.entry_type == 'blocked' %}
+                            <button class="btn-view" data-log-id="{{ log.id }}">
+                                View SHAP
+                            </button>
+                        {% else %}
+                            <span style="color:#9ca3af;font-size:13px;">&#8212;</span>
+                        {% endif %}
+                    </td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+
+</div>
+
+<!-- SHAP Modal -->
+<div class="modal fade" id="shapModal" tabindex="-1">
+    <div class="modal-dialog modal-lg modal-dialog-centered">
+        <div class="modal-content p-4">
+
+            <div class="modal-header border-0">
+                <div>
+                    <h4 class="fw-bold mb-1">SHAP Explainability</h4>
+                    <p class="text-muted mb-0" style="font-size:14px">
+                        Feature contributions to the fraud decision.
+                        <span style="color:#ef4444">&#9632; Red = pushes toward fraud</span> &nbsp;
+                        <span style="color:#22c55e">&#9632; Green = pushes toward normal</span>
+                    </p>
+                </div>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+
+            <div class="modal-body">
+
+                <!-- Loading state -->
+                <div id="shapLoading">
+                    <div class="spinner-border text-primary mb-3" role="status"></div>
+                    <p>Computing SHAP values...</p>
+                </div>
+
+                <!-- Pending state (timed out) -->
+                <div id="shapPending">
+                    &#9203; SHAP values are still being computed in the background.<br>
+                    <small class="text-muted">Try again in a few seconds.</small>
+                </div>
+
+                <!-- Chart -->
+                <div id="shapChartWrap">
+                    <canvas id="shapChart" height="300"></canvas>
+                </div>
+
+            </div>
+
+        </div>
+    </div>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
+
+<script>
+
+// ── Trend chart (live, polls every 10 s) ──────────────────────────────────
+var trendChart = null;
+
+function fetchTrend() {
+    fetch('/live-stats/')
+        .then(function(r){ return r.json(); })
+        .then(function(data) {
+            if (trendChart) {
+                trendChart.data.labels           = data.labels;
+                trendChart.data.datasets[0].data = data.approved;
+                trendChart.data.datasets[1].data = data.blocked;
+                trendChart.update('none');
+            } else {
+                trendChart = new Chart(document.getElementById('trendChart'), {
+                    type: 'line',
+                    data: {
+                        labels: data.labels,
+                        datasets: [
+                            {
+                                label: 'Approved',
+                                data: data.approved,
+                                borderColor: '#22c55e',
+                                backgroundColor: 'rgba(34,197,94,0.08)',
+                                tension: 0.4, fill: true, pointRadius: 4,
+                            },
+                            {
+                                label: 'Blocked',
+                                data: data.blocked,
+                                borderColor: '#ef4444',
+                                backgroundColor: 'rgba(239,68,68,0.08)',
+                                tension: 0.4, fill: true, pointRadius: 4,
+                            }
+                        ]
+                    },
+                    options: {
+                        responsive: true,
+                        animation: false,
+                        plugins: { legend: { display: true, position: 'top' } },
+                        scales: {
+                            x: { grid: { color: '#f1f5f9' } },
+                            y: { beginAtZero: true, ticks: { precision: 0 }, grid: { color: '#f1f5f9' } }
+                        }
+                    }
+                });
+            }
+            // Update pie chart with the same fetch
+            if (data.pie) updatePie(data.pie);
+        })
+        .catch(function(err){ console.warn('Trend fetch error:', err); });
+}
+
+fetchTrend();
+setInterval(fetchTrend, 10000);
+
+
+// ── Pie chart (live, same poll as trend) ──────────────────────────────────
+var pieChart = null;
+
+function updatePie(pie) {
+    var vals = [
+        pie.international || 0,
+        pie.new_device    || 0,
+        pie.vpn           || 0,
+        pie.high_amount   || 0,
+    ];
+    // If all zero (no data yet) show equal placeholder slices
+    var total = vals.reduce(function(a, b){ return a + b; }, 0);
+    if (total === 0) vals = [1, 1, 1, 1];
+
+    if (pieChart) {
+        pieChart.data.datasets[0].data = vals;
+        pieChart.update('none');
+    } else {
+        pieChart = new Chart(document.getElementById('pieChart'), {
+            type: 'pie',
+            data: {
+                labels: ['International', 'New Device', 'VPN', 'High Amount'],
+                datasets: [{
+                    data: vals,
+                    backgroundColor: ['#2563eb', '#7c3aed', '#db2777', '#ea580c'],
+                }]
+            },
+            options: {
+                responsive: true,
+                animation: false,
+                plugins: {
+                    legend: { display: true, position: 'bottom' },
+                    tooltip: {
+                        callbacks: {
+                            label: function(ctx) {
+                                var t = ctx.dataset.data.reduce(function(a,b){return a+b;},0)||1;
+                                return ' ' + ctx.label + ': ' + ctx.raw + ' (' + ((ctx.raw/t)*100).toFixed(1) + '%)';
+                            }
+                        }
+                    }
+                }
+            }
+        });
+    }
+}
+
+
+
+// ── SHAP modal with auto-retry ──────────────────────────────────────────────
+var shapChartInstance = null;
+
+document.querySelector('tbody').addEventListener('click', function(e) {
+    var btn = e.target.closest('.btn-view');
+    if (btn) viewSHAP(btn.getAttribute('data-log-id'));
+});
+
+function viewSHAP(logId) {
+    var modal = new bootstrap.Modal(document.getElementById('shapModal'));
+    modal.show();
+
+    document.getElementById('shapLoading').style.display   = 'block';
+    document.getElementById('shapPending').style.display   = 'none';
+    document.getElementById('shapChartWrap').style.display = 'none';
+    document.getElementById('shapLoading').querySelector('p').textContent = 'Computing SHAP values...';
+
+    if (shapChartInstance) {
+        shapChartInstance.destroy();
+        shapChartInstance = null;
+    }
+
+    var attempts = 0;
+    var MAX      = 30;    // up to ~75 seconds
+    var DELAY    = 2500;  // 2.5 s between retries
+
+    function tryFetch() {
+        fetch('/shap/' + logId + '/')
+            .then(function(r) {
+                if (!r.ok) throw new Error(r.status);
+                return r.json();
+            })
+            .then(function(data) {
+
+                // Not ready yet — schedule a retry
+                if (!data.ready || !data.values || data.values.length === 0) {
+                    attempts++;
+                    if (attempts >= MAX) {
+                        document.getElementById('shapLoading').style.display = 'none';
+                        document.getElementById('shapPending').style.display = 'block';
+                        document.getElementById('shapPending').innerHTML =
+                            '&#9888;&#65039; SHAP computation timed out. The model may still be loading.';
+                        return;
+                    }
+                    document.getElementById('shapLoading').querySelector('p').textContent =
+                        'Computing SHAP values\u2026 (attempt ' + attempts + '/' + MAX + ')';
+                    setTimeout(tryFetch, DELAY);
+                    return;
+                }
+
+                // Values are ready — render chart
+                document.getElementById('shapLoading').style.display   = 'none';
+                document.getElementById('shapChartWrap').style.display = 'block';
+
+                var features = data.features;
+                var values   = data.values;
+                var paired   = features.map(function(f, i) { return { feature: f, value: values[i] }; });
+                paired.sort(function(a, b) { return Math.abs(b.value) - Math.abs(a.value); });
+
+                var top    = paired.slice(0, 15);
+                var labels = top.map(function(p) { return p.feature; });
+                var vals   = top.map(function(p) { return p.value; });
+                var colors = vals.map(function(v) { return v > 0 ? 'rgba(239,68,68,0.8)' : 'rgba(34,197,94,0.8)'; });
+
+                shapChartInstance = new Chart(document.getElementById('shapChart'), {
+                    type: 'bar',
+                    data: {
+                        labels: labels,
+                        datasets: [{
+                            label: 'SHAP Value (impact on fraud score)',
+                            data: vals,
+                            backgroundColor: colors,
+                            borderRadius: 6,
+                        }]
+                    },
+                    options: {
+                        indexAxis: 'y',
+                        responsive: true,
+                        plugins: {
+                            legend: { display: false },
+                            tooltip: {
+                                callbacks: {
+                                    label: function(ctx) {
+                                        return ' ' + (ctx.raw > 0 ? '\u25b2 Fraud' : '\u25bc Normal') + ': ' + ctx.raw.toFixed(4);
+                                    }
+                                }
+                            }
+                        },
+                        scales: {
+                            x: { title: { display: true, text: 'SHAP Value' }, grid: { color: '#f1f5f9' } },
+                            y: { grid: { display: false } }
+                        }
+                    }
+                });
+            })
+            .catch(function(err) {
+                document.getElementById('shapLoading').style.display = 'none';
+                document.getElementById('shapPending').style.display = 'block';
+                document.getElementById('shapPending').innerHTML = '&#10060; Failed to load SHAP values. Check the console.';
+                console.error(err);
+            });
+    }
+
+    tryFetch();
+}
+
+</script>
+</body>
+</html>
